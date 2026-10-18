@@ -1,0 +1,112 @@
+# Migration for OpenEMR
+
+Moves a practice's records into OpenEMR from another EHR. It reads the FHIR R4 export the old system can give, reports what will come across before anything is written, and then imports the core chart through OpenEMR's own services:
+- patients, with their address, phone, language, race and ethnicity;
+- problems, allergies and the medication list;
+- immunizations;
+- encounters, and vital signs on the Vitals form.
+
+Running it twice adds nothing twice.
+
+> **Status: 0.1.0, a pre-release.** Tested on OpenEMR 8.4.1 and master with Synthea's synthetic patients only. Try it on a copy of your database first, and check the report and a sample of charts before importing for real.
+
+What installing it changes in your database, what it reads and writes, and what it hooks into are listed in [FOOTPRINT.md](FOOTPRINT.md), generated from the source.
+
+## What it reads
+
+The old system's FHIR export, in one folder:
+- **Bulk NDJSON:** a FHIR Bulk Data `$export`, one resource per line and a file per type. Certified EHRs have offered it since the end of 2022, under ONC's standardized API criterion, §170.315(g)(10).
+- **Bundle JSON files:** usually one per patient, as single-patient exports and Synthea give.
+
+Anything else in the folder is ignored, as are the export's own Parameters and OperationOutcome files. Every resource is read, and references between them are resolved in the forms exports use: `Type/id`, `urn:uuid:`, and identifier searches such as a practitioner's NPI.
+
+## How to run it
+
+On the server, as the web server's user:
+
+```
+php interface/modules/custom_modules/oe-module-migration/bin/migrate.php \
+    --source=/path/to/export --system="Old EHR" --user=admin
+```
+
+- **A dry run by default.** It writes nothing but its report: for each resource type, how many were read, how many would be imported, how many are skipped and why, and how many failed.
+- **`--import`** writes.
+- **`--system`** names the system the export came from. Each record imported is mapped to its source id under that name, so a rerun, or a later export from the same system, skips what's already in.
+- **`--user`** is the OpenEMR administrator the records are entered as. It must pass `admin/super`, the same check as the module's page.
+- **`--link-duplicates`** handles possible duplicates: patients already in OpenEMR with the same first name, last name, birth date and sex. Without it they're reported and skipped; with it they're linked to the existing patient, and their records go on that chart.
+
+**Admin › Migration** lists every run with its counts, and downloads what was skipped or failed.
+
+## What it imports
+
+| From | Into | How |
+|---|---|---|
+| Patient | Demographics, through `PatientService` | Name (official first), birth date, sex, home address, phones, email, marital status, language, race and ethnicity (US Core extensions, matched to OpenEMR's lists by their CDC codes), MRN as the patient ID when it isn't taken, SSN, date of death |
+| Encounter | An encounter with its forms row, through `EncounterService` | Start and end, class, reason (or type), the provider when an OpenEMR user has the practitioner's NPI. Visit category Office Visit, the primary facility |
+| Condition | The problem list, through `ConditionService` | Name, SNOMED CT and ICD-10 codes, onset (or recorded) date, end date, resolved, verification. Classified Diagnosis, so the quality measures read them |
+| AllergyIntolerance | Allergies, through `AllergyIntoleranceService` | Substance and its codes, date, verification, the reaction where OpenEMR's reaction list has its SNOMED code (others go in the comments), severity |
+| MedicationRequest, MedicationStatement | The medication list, through `ListService` | Name, RxNorm code, start date. A stopped or completed one gets an end date: its own, else its start date, so the list doesn't show it as current |
+| Immunization | Immunizations, written as OpenEMR's Immunizations screen writes them | CVX code, date, completed or not given, lot, expiry, the encounter. On 8.4, `ImmunizationService::insert` is a stub, hence the direct write |
+| Vital-sign Observations | One Vitals form per encounter, through `VitalsService` | Blood pressure, weight, height, temperature, pulse, respiration, oxygen saturation, BMI, head and waist circumference. Converted to the units OpenEMR keeps: pounds, inches and degrees Fahrenheit |
+
+Codes are written as OpenEMR writes them (`SNOMED-CT:`, `ICD10:`, `RXCUI:`). Anything that was adjusted on the way, such as a unit converted or an email address OpenEMR's validator refuses, is kept in the run's notes.
+
+## What it doesn't import yet
+
+- **Not imported:** lab results (about half of a typical export's Observations), survey and social-history Observations, procedures, documents, diagnostic reports, care plans, claims and devices. Each is counted in the report with its reason.
+- **Practitioners, organizations and locations** are read to fill in other records, such as a provider's NPI, but aren't created.
+- **Appointments, insurance and balances** aren't in FHIR US Core. They need per-vendor adapters.
+- **Updating a patient already imported** from a newer export.
+
+## Why not core's FHIR importer
+
+OpenEMR 8.5 has `openemr:fhir-import` (openemr/openemr#14357), built for Synthea test data. It posts each resource to OpenEMR's FHIR write endpoints, which 8.4 lacks for most types. Its README lists what those endpoints can't take yet:
+- lab, survey and social-history Observations;
+- procedures and documents;
+- the extensions that carry race and ethnicity.
+
+This module writes through OpenEMR's own services instead, so it runs on 8.4 and keeps race and ethnicity.
+
+## Who can open what
+
+| What | Check | Same as |
+|---|---|---|
+| The runs page (Admin › Migration) | `admin/super` | the UDS module's settings |
+| The command line | the `--user` named must pass `admin/super` | the page |
+
+## Install
+
+```
+composer require anun333/oe-module-migration
+```
+
+Then in OpenEMR, Modules › Manage Modules: Register, Install and Enable **Migration**.
+
+## Compatibility
+
+Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1`) and master (8.5.0-dev, 1faefbbeb9, 2026-10-18), with `dev/migration_check.py` in the openhealthcare repository. The data was eight Synthea patients (seed 20261018), exported twice, as bulk NDJSON and as Bundles. The check:
+- installs the module through Module Manager;
+- confirms the dry run writes nothing and reads every line of every file;
+- confirms the import brings in what the dry run said (780 records: 8 patients, 173 encounters, 184 problems, 11 allergies, 101 medications, 47 immunizations, and 256 vital signs on 46 Vitals forms) and that OpenEMR's tables hold exactly that;
+- confirms a rerun imports nothing;
+- imports the same people again, from the Bundles under another system name, and confirms every one is reported as a possible duplicate;
+- compares one patient, a problem, an immunization and a converted weight with their source;
+- loads the runs page;
+- removes everything through the map.
+
+It uses OpenEMR features present since 8.1.0, but it hasn't been run on 8.1 to 8.4.0. It needs PHP 8.3 or later.
+
+## Development
+
+```
+composer install
+vendor/bin/phpunit
+php tools/footprint.php          # regenerate FOOTPRINT.md after changing the module
+php tools/footprint.php --check  # what CI runs
+```
+
+The unit tests need no database or OpenEMR install. CI runs them, and the footprint check, on PHP 8.3, 8.4 and 8.5.
+
+## License
+
+GPL-3.0-or-later. See [LICENSE](LICENSE).
