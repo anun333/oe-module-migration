@@ -24,7 +24,7 @@ final class MigratorTest extends TestCase
         $this->assertSame(1, $result['report']['Encounter']['imported']);
         $this->assertSame(1, $result['report']['Condition']['imported']);
         $this->assertSame(['read' => 3, 'imported' => 2, 'already' => 0, 'skipped' => ['a lab result: not imported by this version' => 1], 'failed' => 0], $result['report']['Observation']);
-        $this->assertSame([Migrator::NOT_IN_V1 => 1], $result['report']['Procedure']['skipped']);
+        $this->assertSame([Mappers::WAITING_ON_OPENEMR['Procedure'] => 1], $result['report']['Procedure']['skipped'], 'a procedure waits for an OpenEMR service, and says so');
     }
 
     public function testAnImportWritesInDependencyOrderAndMapsEachRecord(): void

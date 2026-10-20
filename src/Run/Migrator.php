@@ -82,6 +82,8 @@ final class Migrator
         foreach ($this->report as $type => $row) {
             if (in_array($type, Mappers::REFERENCED_TYPES, true)) {
                 $this->report[$type]['skipped'][self::REFERENCED] = $row['read'];
+            } elseif (isset(Mappers::WAITING_ON_OPENEMR[$type])) {
+                $this->report[$type]['skipped'][Mappers::WAITING_ON_OPENEMR[$type]] = $row['read'];
             } elseif (!in_array($type, Mappers::TYPES, true)) {
                 $this->report[$type]['skipped'][self::NOT_IN_V1] = $row['read'];
             }

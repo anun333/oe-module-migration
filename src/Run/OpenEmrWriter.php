@@ -4,6 +4,7 @@
  * Writes mapped records through OpenEMR's own services, so their validation, uuids and
  * events apply: PatientService, EncounterService (which also writes the encounter's forms
  * row), ConditionService, AllergyIntoleranceService, ListService and VitalsService.
+ * Documents go through OpenEMR's Document class, as its patient portal files its PDFs.
  * Immunizations are written as OpenEMR's Immunizations screen writes them, since 8.4's
  * ImmunizationService::insert is a stub. The patient is checked to exist first: some
  * validators let an unknown patient through.
@@ -97,8 +98,36 @@ final class OpenEmrWriter implements Writer
                     throw new \RuntimeException('the Vitals form was not saved');
                 }
                 return (int)$saved['id'];
+            case Mapped::DOCUMENT:
+                return $this->document($record->data, $pid);
         }
         throw new \RuntimeException("nothing writes a {$record->kind}");
+    }
+
+    /**
+     * Into the patient's Documents, under its category (Medical Record), dated as in the source.
+     *
+     * @param array<string, mixed> $d
+     */
+    private function document(array $d, int $pid): int
+    {
+        if (!class_exists(\Document::class)) {
+            throw new \RuntimeException('OpenEMR\'s document storage is not available');
+        }
+        $category = QueryUtils::fetchRecords('SELECT `id` FROM `categories` WHERE `name` = ? ORDER BY `id` LIMIT 1', [(string)$d['category']])[0]['id'] ?? null;
+        if ($category === null) {
+            throw new \RuntimeException("there is no {$d['category']} document category");
+        }
+        $document = new \Document();
+        if (is_string($d['date'] ?? null)) {
+            $document->set_docdate($d['date']);
+        }
+        $content = (string)$d['content'];
+        $error = $document->createDocument((string)$pid, (int)$category, (string)$d['filename'], (string)$d['mimetype'], $content, '', 1, $this->userId);
+        if (!empty($error)) {
+            throw new \RuntimeException('the document was not saved: ' . $error);
+        }
+        return (int)$document->get_id();
     }
 
     /**

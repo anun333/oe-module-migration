@@ -26,6 +26,7 @@ final class Mapped
     public const IMMUNIZATION = 'immunization';
     public const ENCOUNTER = 'encounter';
     public const VITALS = 'vitals';
+    public const DOCUMENT = 'document';
 
     /**
      * @param array<string, mixed> $data   the fields for OpenEMR's service

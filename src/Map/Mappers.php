@@ -11,7 +11,11 @@
  *  - MedicationRequest and MedicationStatement: the medication list (ListService);
  *  - Immunization: the immunizations table, as OpenEMR's Immunizations screen writes it;
  *  - vital-sign Observations: one Vitals form per encounter, in the units OpenEMR keeps
- *    (pounds, inches, degrees Fahrenheit).
+ *    (pounds, inches, degrees Fahrenheit);
+ *  - DocumentReference with its attachment in the export: the patient's Documents, under
+ *    Medical Record, through OpenEMR's Document class (0.2.0).
+ * Procedures and diagnostic reports wait for an OpenEMR service that writes procedure orders
+ * and results; its C-CDA import writes them with SQL of its own.
  * Codes are written as OpenEMR writes them: "SNOMED-CT:", "ICD10:", "RXCUI:".
  *
  * @package   OpenEMR
@@ -30,13 +34,25 @@ use OpenHealthcare\Migration\Source\FhirExport;
 final class Mappers
 {
     /** The types version 1 imports. */
-    public const TYPES = ['Patient', 'Encounter', 'Condition', 'AllergyIntolerance', 'MedicationRequest', 'MedicationStatement', 'Immunization', 'Observation'];
+    public const TYPES = ['Patient', 'Encounter', 'Condition', 'AllergyIntolerance', 'MedicationRequest', 'MedicationStatement', 'Immunization', 'Observation', 'DocumentReference'];
+
+    /** Types an OpenEMR service would have to write first, and why they aren't imported yet. */
+    public const WAITING_ON_OPENEMR = [
+        'Procedure' => 'OpenEMR has no service that writes procedures (procedure orders); its own C-CDA import writes them with SQL',
+        'DiagnosticReport' => 'OpenEMR has no service that writes lab reports and results; its own C-CDA import writes them with SQL',
+    ];
+
+    /** Attachment types to the extension a document's file name gets. */
+    private const EXTENSIONS = [
+        'text/plain' => 'txt', 'text/html' => 'html', 'application/pdf' => 'pdf', 'application/xml' => 'xml', 'text/xml' => 'xml',
+        'application/rtf' => 'rtf', 'text/rtf' => 'rtf', 'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/tiff' => 'tif', 'image/gif' => 'gif',
+    ];
 
     /** Read to fill in other records (a medication's name, a provider's NPI), not imported themselves. */
     public const REFERENCED_TYPES = ['Medication', 'Practitioner', 'PractitionerRole', 'Organization', 'Location'];
 
     /** Those needing only their patient, in the order they're imported. */
-    public const CHART_TYPES = ['Condition', 'AllergyIntolerance', 'MedicationRequest', 'MedicationStatement', 'Immunization'];
+    public const CHART_TYPES = ['Condition', 'AllergyIntolerance', 'MedicationRequest', 'MedicationStatement', 'Immunization', 'DocumentReference'];
 
     public const RACE = 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race';
     public const ETHNICITY = 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity';
@@ -211,6 +227,7 @@ final class Mappers
             'AllergyIntolerance' => $this->allergy($r, $export),
             'MedicationRequest', 'MedicationStatement' => $this->medication($r, $export),
             'Immunization' => $this->immunization($r, $export),
+            'DocumentReference' => $this->document($r, $export),
             default => Mapped::skipped('', (string)$r['resourceType'], (string)$r['id'], null, 'not imported by this version'),
         };
     }
@@ -305,6 +322,55 @@ final class Mappers
             $data['outcome'] = '1';
         }
         return new Mapped(Mapped::PROBLEM, 'Condition', $id, $patient, $this->encounterOf($c, $export), $data);
+    }
+
+    /**
+     * A document with its content in the export (attachment.data, base64). One that only points at
+     * a Binary by URL is skipped: the bulk export's DocumentReference file doesn't carry it.
+     *
+     * @param array<string, mixed> $d
+     */
+    public function document(array $d, FhirExport $export): Mapped
+    {
+        $id = (string)$d['id'];
+        $patient = $this->patientOf($d['subject'] ?? null, $export);
+        $status = is_string($d['status'] ?? null) ? $d['status'] : '';
+        if ($status === 'entered-in-error' || ($d['docStatus'] ?? null) === 'entered-in-error') {
+            return Mapped::skipped(Mapped::DOCUMENT, 'DocumentReference', $id, $patient, 'marked entered in error');
+        }
+        $attachment = null;
+        $byUrl = false;
+        foreach (is_array($d['content'] ?? null) ? $d['content'] : [] as $content) {
+            $a = is_array($content['attachment'] ?? null) ? $content['attachment'] : [];
+            if (is_string($a['data'] ?? null) && $a['data'] !== '') {
+                $attachment = $a;
+                break;
+            }
+            $byUrl = $byUrl || is_string($a['url'] ?? null);
+        }
+        if ($attachment === null) {
+            return Mapped::skipped(Mapped::DOCUMENT, 'DocumentReference', $id, $patient,
+                $byUrl ? 'its content is a link (a Binary), not in the export' : 'no content');
+        }
+        $bytes = base64_decode((string)$attachment['data'], true);
+        if ($bytes === false || $bytes === '') {
+            return Mapped::skipped(Mapped::DOCUMENT, 'DocumentReference', $id, $patient, 'its content is not valid base64');
+        }
+        $mime = strtolower(trim(explode(';', is_string($attachment['contentType'] ?? null) ? $attachment['contentType'] : '')[0]));
+        $mime = $mime !== '' ? $mime : 'application/octet-stream';
+        $date = Fhir::date($d['date'] ?? null) ?? Fhir::date($d['context']['period']['start'] ?? null);
+        $title = Fhir::text($d['type'] ?? null);
+        $title = $title !== '' ? $title : (is_string($attachment['title'] ?? null) && $attachment['title'] !== '' ? $attachment['title']
+            : (is_string($d['description'] ?? null) && $d['description'] !== '' ? $d['description'] : 'Document'));
+        $base = trim((string)preg_replace('/[^A-Za-z0-9]+/', '-', $title), '-') ?: 'Document';
+        $notes = $status === 'superseded' ? ['marked superseded in the source; imported as a past document'] : [];
+        return new Mapped(Mapped::DOCUMENT, 'DocumentReference', $id, $patient, null, [
+            'filename' => mb_substr($base, 0, 60) . ($date !== null ? '-' . $date : '') . '.' . (self::EXTENSIONS[$mime] ?? 'bin'),
+            'mimetype' => $mime,
+            'content' => $bytes,
+            'date' => $date,
+            'category' => 'Medical Record',
+        ], null, $notes);
     }
 
     /** @param array<string, mixed> $a */

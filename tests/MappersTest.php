@@ -151,6 +151,28 @@ final class MappersTest extends TestCase
         $this->assertContains('weight converted from kg to lb', $forms[0]->notes);
     }
 
+    public function testADocumentWithItsContentGoesToDocumentsAndOneByLinkIsSkipped(): void
+    {
+        $export = FhirExport::fromResources([['resourceType' => 'Patient', 'id' => 'p1']]);
+        $note = "2012-11-05\n\n# Chief Complaint\nNo complaints.\n";
+        $doc = static fn(array $over): array => $over + ['resourceType' => 'DocumentReference', 'id' => 'd1', 'status' => 'superseded', 'subject' => self::SUBJECT,
+            'type' => ['coding' => [['system' => Fhir::LOINC, 'code' => '34117-2', 'display' => 'History and physical note']]],
+            'date' => '2012-11-05T04:26:00.249-06:00',
+            'content' => [['attachment' => ['contentType' => 'text/plain; charset=utf-8', 'data' => base64_encode($note)]]]];
+        $m = $this->mappers()->document($doc([]), $export);
+        $this->assertNull($m->skip);
+        $this->assertSame(Mapped::DOCUMENT, $m->kind);
+        $this->assertSame(['filename' => 'History-and-physical-note-2012-11-05.txt', 'mimetype' => 'text/plain', 'content' => $note, 'date' => '2012-11-05', 'category' => 'Medical Record'], $m->data);
+        $this->assertSame(['marked superseded in the source; imported as a past document'], $m->notes);
+        $this->assertSame('its content is a link (a Binary), not in the export',
+            $this->mappers()->document($doc(['content' => [['attachment' => ['contentType' => 'application/pdf', 'url' => 'Binary/b1']]]]), $export)->skip);
+        $this->assertSame('its content is not valid base64',
+            $this->mappers()->document($doc(['content' => [['attachment' => ['contentType' => 'application/pdf', 'data' => '***']]]]), $export)->skip);
+        $this->assertSame('marked entered in error', $this->mappers()->document($doc(['status' => 'entered-in-error']), $export)->skip);
+        $pdf = $this->mappers()->document($doc(['type' => [], 'description' => 'Discharge summary', 'content' => [['attachment' => ['contentType' => 'application/pdf', 'data' => base64_encode('%PDF-1.4')]]]]), $export);
+        $this->assertSame(['Discharge-summary-2012-11-05.pdf', 'application/pdf'], [$pdf->data['filename'], $pdf->data['mimetype']], 'named from the description when there is no type');
+    }
+
     private function mappers(): Mappers
     {
         return new Mappers(new FakeLookups());
