@@ -8,7 +8,7 @@ Moves a practice's records into OpenEMR from another EHR. It reads the FHIR R4 e
 
 Running it twice adds nothing twice.
 
-> **Status: 0.1.0, a pre-release.** Tested on OpenEMR 8.4.1 and master with Synthea's synthetic patients only. Try it on a copy of your database first, and check the report and a sample of charts before importing for real.
+> **Status: 0.2.0, a pre-release.** Tested on OpenEMR 8.4.1 and master with Synthea's synthetic patients only. Try it on a copy of your database first, and check the report and a sample of charts before importing for real.
 
 What installing it changes in your database, what it reads and writes, and what it hooks into are listed in [FOOTPRINT.md](FOOTPRINT.md), generated from the source.
 
@@ -47,13 +47,15 @@ php interface/modules/custom_modules/oe-module-migration/bin/migrate.php \
 | AllergyIntolerance | Allergies, through `AllergyIntoleranceService` | Substance and its codes, date, verification, the reaction where OpenEMR's reaction list has its SNOMED code (others go in the comments), severity |
 | MedicationRequest, MedicationStatement | The medication list, through `ListService` | Name, RxNorm code, start date. A stopped or completed one gets an end date: its own, else its start date, so the list doesn't show it as current |
 | Immunization | Immunizations, written as OpenEMR's Immunizations screen writes them | CVX code, date, completed or not given, lot, expiry, the encounter. On 8.4, `ImmunizationService::insert` is a stub, hence the direct write |
+| DocumentReference | The patient's Documents, under Medical Record, through OpenEMR's `Document` class | Its content when it's in the export (base64 `attachment.data`), named from the document type and date, with its content type and date. One marked superseded is imported as a past document and noted; one that only links to a Binary is skipped with that reason |
 | Vital-sign Observations | One Vitals form per encounter, through `VitalsService` | Blood pressure, weight, height, temperature, pulse, respiration, oxygen saturation, BMI, head and waist circumference. Converted to the units OpenEMR keeps: pounds, inches and degrees Fahrenheit |
 
 Codes are written as OpenEMR writes them (`SNOMED-CT:`, `ICD10:`, `RXCUI:`). Anything that was adjusted on the way, such as a unit converted or an email address OpenEMR's validator refuses, is kept in the run's notes.
 
 ## What it doesn't import yet
 
-- **Not imported:** lab results (about half of a typical export's Observations), survey and social-history Observations, procedures, documents, diagnostic reports, care plans, claims and devices. Each is counted in the report with its reason.
+- **Not imported:** lab results (about half of a typical export's Observations), survey and social-history Observations, procedures, diagnostic reports, care plans, claims and devices. Each is counted in the report with its reason.
+- **Procedures and diagnostic reports wait for OpenEMR.** OpenEMR has no service that writes procedure orders, reports or results; its own C-CDA import writes them with SQL of its own. The report says so for each.
 - **Practitioners, organizations and locations** are read to fill in other records, such as a provider's NPI, but aren't created.
 - **Appointments, insurance and balances** aren't in FHIR US Core. They need per-vendor adapters.
 - **Updating a patient already imported** from a newer export.
