@@ -23,6 +23,12 @@
 
 declare(strict_types=1);
 
+if (PHP_SAPI !== 'cli') {
+    // Composer installs the package under the web root; the tools are for the command line only.
+    http_response_code(404);
+    exit;
+}
+
 $root = dirname(__DIR__);
 $out = $root . '/FOOTPRINT.md';
 
