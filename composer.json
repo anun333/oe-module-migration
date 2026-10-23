@@ -22,7 +22,8 @@
         "openemr/oe-module-installer-plugin": "^0.1.5"
     },
     "require-dev": {
-        "phpunit/phpunit": "^11.5"
+        "phpunit/phpunit": "^11.5",
+        "anun333/openhealthcare-common": "^1.0"
     },
     "autoload": {
         "psr-4": {
