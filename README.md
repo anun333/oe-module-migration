@@ -88,7 +88,7 @@ Then in OpenEMR, Modules › Manage Modules: Register, Install and Enable **Migr
 
 **PHP security.** PHP's php2shell advisory (2026-10-21; CVE-2026-109618 and CVE-2026-109619) is remote code execution without logging in, and it is being exploited. Run OpenEMR on PHP 8.2.35, 8.3.36, 8.4.27, 8.5.12 or later, whatever the module needs. The official OpenEMR 7.0.2 and 7.0.3 Docker images can't get that fix: they carry PHP 8.2.16 and 8.3.15 on Alpine releases that no longer get updates. Run 7.0 only on a patched PHP, or upgrade OpenEMR. OpenEMR rebuilt its 8.4.1, 8.3.0, 8.2.0 and 8.0.0.3 images with the fix on 2026-10-22 (forum t/27157); a container started before then needs pulling again.
 
-**Older OpenEMR:** on 7.0.3 and older (no `OEGlobalsBag`), the module stays switched off rather than stop OpenEMR's pages; it hasn't been tested from 7.0.4 to 8.3. Checked on a fresh 7.0.2 install with every module enabled (`dev/module_compat_check.sh`).
+**Older OpenEMR:** on 7.0.3 and older (no `OEGlobalsBag`), the module stays switched off rather than stop OpenEMR's pages; checked on fresh 7.0.2 and 7.0.3 installs with every module enabled. On fresh official 8.1.0, 8.3.0 and 8.5.0 images (2026-10-23) it installs through Module Manager and its pages that need no patient load, with every module enabled and with it alone (`dev/module_compat_check.sh`). 7.0.4 to 8.0 haven't been tried.
 
 Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1`) and master (8.5.0-dev, 1faefbbeb9, 2026-10-18), with `dev/migration_check.py` in the openhealthcare repository. The data was eight Synthea patients (seed 20261018), exported twice, as bulk NDJSON and as Bundles. The check:
 - installs the module through Module Manager;
@@ -100,7 +100,7 @@ Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1
 - loads the runs page;
 - removes everything through the map.
 
-It uses OpenEMR features present since 8.1.0, but it hasn't been run on 8.1 to 8.4.0. It needs PHP 8.3 or later.
+It uses OpenEMR features present since 8.1.0. It installs and its pages load on 8.1.0 and 8.3.0 (above); the full end-to-end check runs on 8.4.1 and master. It needs PHP 8.3 or later.
 
 ## Development
 
