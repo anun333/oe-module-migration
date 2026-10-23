@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.1 (unreleased)
+## 0.2.1 (2026-10-22)
 
 - **The footprint tool refuses web requests.** Composer installs the package under the web root, so `tools/footprint.php` now answers a web request with 404 and runs only from the command line, as Clinic Forms' tools do.
 - **A test that no translated string has an apostrophe or quote mark**, since OpenEMR's `xl()` shows them as backticks. None did.
