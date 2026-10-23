@@ -86,6 +86,8 @@ Then in OpenEMR, Modules › Manage Modules: Register, Install and Enable **Migr
 
 ## Compatibility
 
+**PHP security.** PHP's php2shell advisory (2026-10-21; CVE-2026-109618 and CVE-2026-109619) is remote code execution without logging in, and it is being exploited. Run OpenEMR on PHP 8.2.35, 8.3.36, 8.4.27, 8.5.12 or later, whatever the module needs. The official OpenEMR 7.0.2 and 7.0.3 Docker images can't get that fix: they carry PHP 8.2.16 and 8.3.15 on Alpine releases that no longer get updates. Run 7.0 only on a patched PHP, or upgrade OpenEMR. OpenEMR rebuilt its 8.4.1, 8.3.0, 8.2.0 and 8.0.0.3 images with the fix on 2026-10-22 (forum t/27157); a container started before then needs pulling again.
+
 **Older OpenEMR:** on 7.0.3 and older (no `OEGlobalsBag`), the module stays switched off rather than stop OpenEMR's pages; it hasn't been tested from 7.0.4 to 8.3. Checked on a fresh 7.0.2 install with every module enabled (`dev/module_compat_check.sh`).
 
 Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1`) and master (8.5.0-dev, 1faefbbeb9, 2026-10-18), with `dev/migration_check.py` in the openhealthcare repository. The data was eight Synthea patients (seed 20261018), exported twice, as bulk NDJSON and as Bundles. The check:
