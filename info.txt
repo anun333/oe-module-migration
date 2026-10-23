@@ -1,1 +1,1 @@
-Migration v0.2.1
+Migration v0.2.2
