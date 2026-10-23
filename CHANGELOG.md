@@ -3,6 +3,7 @@
 ## 0.2.3 (unreleased)
 
 - Development: the test for translated strings with an apostrophe or quote mark uses [openhealthcare-common](https://github.com/anun333/openhealthcare-common)'s scan, the same one every openhealthcare module runs. It is a development dependency only; nothing installed changes.
+- **Accessibility:** the page declares its language (`<html lang>`).
 
 ## 0.2.2 (2026-10-22)
 
