@@ -86,6 +86,8 @@ Then in OpenEMR, Modules › Manage Modules: Register, Install and Enable **Migr
 
 ## Compatibility
 
+**Older OpenEMR:** on 7.0.3 and older (no `OEGlobalsBag`), the module stays switched off rather than stop OpenEMR's pages; it hasn't been tested from 7.0.4 to 8.3. Checked on a fresh 7.0.2 install with every module enabled (`dev/module_compat_check.sh`).
+
 Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1`) and master (8.5.0-dev, 1faefbbeb9, 2026-10-18), with `dev/migration_check.py` in the openhealthcare repository. The data was eight Synthea patients (seed 20261018), exported twice, as bulk NDJSON and as Bundles. The check:
 - installs the module through Module Manager;
 - confirms the dry run writes nothing and reads every line of every file;
