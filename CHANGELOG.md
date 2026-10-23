@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 (unreleased)
+
+- **The footprint tool refuses web requests.** Composer installs the package under the web root, so `tools/footprint.php` now answers a web request with 404 and runs only from the command line, as Clinic Forms' tools do.
+- **A test that no translated string has an apostrophe or quote mark**, since OpenEMR's `xl()` shows them as backticks. None did.
+- **README:** Layout Export is listed among the project's other modules.
+
 ## 0.2.0 (2026-10-19)
 
 - **Documents.** A DocumentReference whose content is in the export (base64 `attachment.data`, as Synthea and many single-patient exports give) is filed in the patient's Documents under Medical Record, through OpenEMR's own `Document` class.
