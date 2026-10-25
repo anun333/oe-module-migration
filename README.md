@@ -4,7 +4,7 @@ Moves a practice's records into OpenEMR from another EHR. It reads the FHIR R4 e
 - patients, with their address, phone, language, race and ethnicity;
 - problems, allergies and the medication list;
 - immunizations;
-- encounters, and vital signs on the Vitals form.
+- encounters, vital signs on the Vitals form, and scored questionnaires (PHQ-9, GAD-7, AUDIT-C, PRAPARE and others) on the Observation form, where OpenEMR's quality measures read them.
 
 Running it twice adds nothing twice.
 
@@ -48,13 +48,15 @@ php interface/modules/custom_modules/oe-module-migration/bin/migrate.php \
 | MedicationRequest, MedicationStatement | The medication list, through `ListService` | Name, RxNorm code, start date. A stopped or completed one gets an end date: its own, else its start date, so the list doesn't show it as current |
 | Immunization | Immunizations, written as OpenEMR's Immunizations screen writes them | CVX code, date, completed or not given, lot, expiry, the encounter. On 8.4, `ImmunizationService::insert` is a stub, hence the direct write |
 | DocumentReference | The patient's Documents, under Medical Record, through OpenEMR's `Document` class | Its content when it's in the export (base64 `attachment.data`), named from the document type and date, with its content type and date. One marked superseded is imported as a past document and noted; one that only links to a Binary is skipped with that reason |
-| Vital-sign Observations | One Vitals form per encounter, through `VitalsService` | Blood pressure, weight, height, temperature, pulse, respiration, oxygen saturation, BMI, head and waist circumference. Converted to the units OpenEMR keeps: pounds, inches and degrees Fahrenheit |
+| Vital-sign Observations | One Vitals form per encounter, through `VitalsService` | Blood pressure, weight, height, temperature, pulse, respiration, oxygen saturation, inhaled oxygen concentration, BMI, the BMI, weight-for-length and head circumference percentiles, head and waist circumference. Converted to the units OpenEMR keeps: pounds, inches and degrees Fahrenheit |
+| Survey Observations | The encounter's Observation form, through `ObservationService`, as assessments | The LOINC code and name, the score or answer (a coded answer with its display), date and status. A panel such as PRAPARE keeps each answer as a sub-observation. Assessments are what OpenEMR's quality measures read |
 
 Codes are written as OpenEMR writes them (`SNOMED-CT:`, `ICD10:`, `RXCUI:`). Anything that was adjusted on the way, such as a unit converted or an email address OpenEMR's validator refuses, is kept in the run's notes.
 
 ## What it doesn't import yet
 
-- **Not imported:** lab results (about half of a typical export's Observations), survey and social-history Observations, procedures, diagnostic reports, care plans, claims and devices. Each is counted in the report with its reason.
+- **Not imported:** lab results (about half of a typical export's Observations), social-history Observations (smoking and pregnancy status), procedures, diagnostic reports, care plans, claims and devices. Each is counted in the report with its reason.
+- **USCDI v3**, the data set every certified EHR must be able to export from 2026: [docs/USCDI.md](docs/USCDI.md) lists all 94 elements and what Migration does with each.
 - **Procedures and diagnostic reports wait for OpenEMR.** OpenEMR has no service that writes procedure orders, reports or results; its own C-CDA import writes them with SQL of its own. The report says so for each.
 - **Practitioners, organizations and locations** are read to fill in other records, such as a provider's NPI, but aren't created.
 - **Appointments, insurance and balances** aren't in FHIR US Core. They need per-vendor adapters.
@@ -93,10 +95,10 @@ Then in OpenEMR, Modules › Manage Modules: Register, Install and Enable **Migr
 Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1`) and master (8.5.0-dev, 1faefbbeb9, 2026-10-18), with `dev/migration_check.py` in the openhealthcare repository. The data was eight Synthea patients (seed 20261018), exported twice, as bulk NDJSON and as Bundles. The check:
 - installs the module through Module Manager;
 - confirms the dry run writes nothing and reads every line of every file;
-- confirms the import brings in what the dry run said (780 records: 8 patients, 173 encounters, 184 problems, 11 allergies, 101 medications, 47 immunizations, and 256 vital signs on 46 Vitals forms) and that OpenEMR's tables hold exactly that;
+- confirms the import brings in what the dry run said (1,723 records with Synthea v4.0.0: 8 patients, 270 encounters, 220 problems, 11 allergies, 80 medications, 112 immunizations, 270 documents, 485 vital signs on 82 Vitals forms, and 267 survey answers on Observation forms) and that OpenEMR's tables hold exactly that;
 - confirms a rerun imports nothing;
 - imports the same people again, from the Bundles under another system name, and confirms every one is reported as a possible duplicate;
-- compares one patient, a problem, an immunization and a converted weight with their source;
+- compares one patient, a problem, an immunization, a converted weight, a PHQ-9 total (an assessment on its encounter's Observation form) and a PRAPARE panel (21 answers as sub-observations) with their source;
 - loads the runs page;
 - removes everything through the map.
 

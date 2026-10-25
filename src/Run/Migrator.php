@@ -132,7 +132,7 @@ final class Migrator
             return;
         }
         $encounter = $m->encounterId === null ? null : ($this->map['Encounter/' . $m->encounterId] ?? null);
-        if ($m->kind === Mapped::VITALS && $encounter === null) {
+        if (in_array($m->kind, [Mapped::VITALS, Mapped::ASSESSMENT], true) && $encounter === null) {
             $this->skip($m, self::NO_ENCOUNTER);
             return;
         }

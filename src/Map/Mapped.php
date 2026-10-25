@@ -27,6 +27,8 @@ final class Mapped
     public const ENCOUNTER = 'encounter';
     public const VITALS = 'vitals';
     public const DOCUMENT = 'document';
+    /** A survey Observation, on OpenEMR's Observation form as an assessment (0.3.0). */
+    public const ASSESSMENT = 'assessment';
 
     /**
      * @param array<string, mixed> $data   the fields for OpenEMR's service

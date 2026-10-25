@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+**Survey answers where OpenEMR's quality measures read them, and the rest of USCDI v3's vital signs.**
+
+- **Survey Observations** (PHQ-9, PHQ-2, GAD-7, AUDIT-C, DAST-10, HARK, PRAPARE, the PEG and other scored questionnaires) are imported onto the encounter's Observation form, through OpenEMR's own `ObservationService::saveObservation`, as assessments. Assessments are what core's quality measures read (`Qdm\Services\AssessmentService`).
+  - Each keeps its LOINC code and name, its score or answer, its date and its status. A coded answer keeps its display (`ob_value_code_description`, where the column exists).
+  - A panel such as PRAPARE becomes one observation with each answer as a sub-observation. An answer with no LOINC code or no value is left out and noted.
+  - One with no LOINC code, no encounter, no date or no value is skipped with that reason, as is one entered in error.
+- **Vital signs:** inhaled oxygen concentration and the BMI, weight-for-length and head circumference percentiles now go onto the Vitals form, which has fields for them. With these, Migration covers every USCDI v3 vital sign.
+- **[docs/USCDI.md](docs/USCDI.md):** all 94 USCDI v3 elements (October 2022 errata) and what Migration does with each: 41 imported, 8 partly, 45 not yet, with the reason for each.
+- **Social-history Observations** (smoking and pregnancy status) are still skipped, with that reason.
+- **Checked:** unit tests for surveys (a score, a coded answer, a panel's components, and the five reasons to skip) and for the new vital signs. End to end on OpenEMR 8.4.1 and master, 22 checks each: 1,723 records, including 267 survey answers. A PHQ-9 total is compared with its source, and a PRAPARE panel keeps its 21 answers.
+
 ## 0.2.3 (2026-10-23)
 
 - Development: the test for translated strings with an apostrophe or quote mark uses [openhealthcare-common](https://github.com/anun333/openhealthcare-common)'s scan, the same one every openhealthcare module runs. It is a development dependency only; nothing installed changes.

@@ -13,7 +13,10 @@
  *  - vital-sign Observations: one Vitals form per encounter, in the units OpenEMR keeps
  *    (pounds, inches, degrees Fahrenheit);
  *  - DocumentReference with its attachment in the export: the patient's Documents, under
- *    Medical Record, through OpenEMR's Document class (0.2.0).
+ *    Medical Record, through OpenEMR's Document class (0.2.0);
+ *  - survey Observations (PHQ-9, GAD-7, AUDIT-C and other scored questionnaires): OpenEMR's
+ *    Observation form through ObservationService::saveObservation, as assessments, so core's
+ *    quality measures read them (0.3.0). A panel's components become its sub-observations.
  * Procedures and diagnostic reports wait for an OpenEMR service that writes procedure orders
  * and results; its C-CDA import writes them with SQL of its own.
  * Codes are written as OpenEMR writes them: "SNOMED-CT:", "ICD10:", "RXCUI:".
@@ -68,6 +71,8 @@ final class Mappers
         '8480-6' => 'bps', '8462-4' => 'bpd', '29463-7' => 'weight', '8302-2' => 'height', '8310-5' => 'temperature',
         '8867-4' => 'pulse', '9279-1' => 'respiration', '59408-5' => 'oxygen_saturation', '2708-6' => 'oxygen_saturation',
         '39156-5' => 'BMI', '9843-4' => 'head_circ', '8287-5' => 'head_circ', '8280-0' => 'waist_circ',
+        // USCDI v3's other vital signs (0.3.0), which the Vitals form has fields for, in percent as US Core sends them.
+        '3150-0' => 'inhaled_oxygen_concentration', '59576-9' => 'ped_bmi', '77606-2' => 'ped_weight_height', '8289-1' => 'ped_head_circ',
     ];
 
     public function __construct(private readonly Lookups $lookups)
@@ -233,7 +238,8 @@ final class Mappers
     }
 
     /**
-     * Vital-sign Observations, one Vitals form per encounter, and every other Observation skipped with its reason.
+     * Vital-sign Observations, one Vitals form per encounter; survey Observations, each an assessment on the Observation
+     * form; and every other Observation skipped with its reason.
      *
      * @param list<array<string, mixed>> $observations
      * @return list<Mapped>
@@ -249,11 +255,15 @@ final class Mappers
             foreach (is_array($o['category'] ?? null) ? $o['category'] : [] as $c) {
                 $category = $category !== '' ? $category : Fhir::status($c);
             }
+            if ($category === 'survey') {
+                $out[] = $this->survey($o, $id, $patient, $export);
+                continue;
+            }
             if ($category !== 'vital-signs') {
                 $out[] = Mapped::skipped(Mapped::VITALS, 'Observation', $id, $patient, match ($category) {
                     'laboratory' => 'a lab result: not imported by this version',
-                    'survey', 'social-history' => 'a ' . $category . ' observation: not imported by this version',
-                    default => 'not a vital sign: not imported by this version',
+                    'social-history' => 'a social-history observation: not imported by this version',
+                    default => 'not a vital sign or survey: not imported by this version',
                 });
                 continue;
             }
@@ -291,6 +301,85 @@ final class Mappers
                 ['date' => $g['date']] + $g['data'], null, array_values(array_unique($g['notes'])), $g['parts']);
         }
         return $out;
+    }
+
+    /**
+     * A survey Observation as an assessment on OpenEMR's Observation form: its LOINC code, its value (a score, a
+     * coded answer, text) and, for a panel such as PRAPARE, each component as a sub-observation. ob_type
+     * "assessment" is what core's quality measures read (Qdm\Services\AssessmentService).
+     *
+     * @param array<string, mixed> $o
+     */
+    private function survey(array $o, string $id, ?string $patient, FhirExport $export): Mapped
+    {
+        if (in_array($o['status'] ?? null, ['entered-in-error', 'cancelled'], true)) {
+            return Mapped::skipped(Mapped::ASSESSMENT, 'Observation', $id, $patient, 'marked entered in error or cancelled');
+        }
+        $loinc = Fhir::code($o['code'] ?? null, Fhir::LOINC);
+        if ($loinc === null) {
+            return Mapped::skipped(Mapped::ASSESSMENT, 'Observation', $id, $patient, 'a survey with no LOINC code');
+        }
+        $encounter = $export->target($o['encounter'] ?? null, 'Encounter');
+        if ($encounter === null) {
+            return Mapped::skipped(Mapped::ASSESSMENT, 'Observation', $id, $patient, 'not tied to an encounter');
+        }
+        $date = Fhir::dateTime($o['effectiveDateTime'] ?? null) ?? Fhir::dateTime($o['effectivePeriod']['start'] ?? null) ?? Fhir::dateTime($o['issued'] ?? null);
+        if ($date === null) {
+            return Mapped::skipped(Mapped::ASSESSMENT, 'Observation', $id, $patient, 'a survey with no date');
+        }
+        $notes = [];
+        $base = ['ob_type' => 'assessment', 'category' => 'survey', 'date' => $date, 'ob_status' => (string)($o['status'] ?? 'final')];
+        $subs = [];
+        foreach (is_array($o['component'] ?? null) ? $o['component'] : [] as $c) {
+            $code = is_array($c) ? Fhir::code($c['code'] ?? null, Fhir::LOINC) : null;
+            $value = is_array($c) ? self::surveyValue($c) : null;
+            if ($code === null || $value === null) {
+                $notes[] = 'a component with no LOINC code or no value left out';
+                continue;
+            }
+            $subs[] = $base + ['code' => 'LOINC:' . $code, 'description' => Fhir::text($c['code'] ?? null) ?: $code] + $value;
+        }
+        $value = self::surveyValue($o);
+        if ($value === null && $subs === []) {
+            return Mapped::skipped(Mapped::ASSESSMENT, 'Observation', $id, $patient, 'a survey with no value');
+        }
+        return new Mapped(Mapped::ASSESSMENT, 'Observation', $id, $patient, $encounter[1],
+            $base + ['code' => 'LOINC:' . $loinc, 'description' => Fhir::text($o['code'] ?? null) ?: $loinc]
+                + ($value ?? ['ob_value' => '', 'ob_unit' => '']) + ['sub_observations' => $subs],
+            null, array_values(array_unique($notes)));
+    }
+
+    /**
+     * An Observation's (or component's) value as the Observation form keeps it: the number with its unit (an
+     * annotation such as {score} is no unit), a coded answer's code with its display, text, or yes and no.
+     *
+     * @param array<string, mixed> $o
+     * @return array{ob_value: string, ob_unit: string, ob_value_code_description?: string}|null
+     */
+    private static function surveyValue(array $o): ?array
+    {
+        if (is_array($o['valueQuantity'] ?? null) && is_numeric($o['valueQuantity']['value'] ?? null)) {
+            $unit = (string)($o['valueQuantity']['unit'] ?? $o['valueQuantity']['code'] ?? '');
+            return ['ob_value' => (string)(0 + $o['valueQuantity']['value']), 'ob_unit' => str_starts_with($unit, '{') ? '' : $unit];
+        }
+        foreach (['valueInteger', 'valueDecimal'] as $k) {
+            if (is_numeric($o[$k] ?? null)) {
+                return ['ob_value' => (string)(0 + $o[$k]), 'ob_unit' => ''];
+            }
+        }
+        if (is_array($o['valueCodeableConcept'] ?? null)) {
+            $codings = Fhir::codings($o['valueCodeableConcept']);
+            if ($codings !== []) {
+                return ['ob_value' => $codings[0]['code'], 'ob_unit' => '', 'ob_value_code_description' => Fhir::text($o['valueCodeableConcept'])];
+            }
+        }
+        if (is_string($o['valueString'] ?? null) && trim($o['valueString']) !== '') {
+            return ['ob_value' => trim($o['valueString']), 'ob_unit' => ''];
+        }
+        if (is_bool($o['valueBoolean'] ?? null)) {
+            return ['ob_value' => $o['valueBoolean'] ? 'true' : 'false', 'ob_unit' => ''];
+        }
+        return null;
     }
 
     /** @param array<string, mixed> $c */

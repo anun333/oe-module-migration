@@ -139,6 +139,7 @@ final class MappersTest extends TestCase
         $out = $this->mappers()->vitals([
             $obs('w', '29463-7', 70, 'kg'), $obs('h', '8302-2', 175, 'cm'), $obs('t', '8310-5', 37, 'Cel'), $obs('bmi', '39156-5', 22.86, 'kg/m2'), $bp,
             $obs('pain', '72514-3', 3, '{score}'), $obs('a1c', '4548-4', 6.1, '%', 'e1', 'laboratory'), $obs('w2', '29463-7', 71, 'kg', 'e2'),
+            $obs('bmip', '59576-9', 71.5, '%', 'e2'), $obs('fio2', '3150-0', 28, '%', 'e2'),
         ], FhirExport::fromResources([]));
 
         $forms = array_values(array_filter($out, static fn(Mapped $m): bool => $m->skip === null));
@@ -149,6 +150,46 @@ final class MappersTest extends TestCase
         $this->assertSame(['date' => '2021-11-24 16:06:56', 'weight' => 154.32, 'height' => 68.9, 'temperature' => 98.6, 'BMI' => 22.86, 'bpd' => 69.0, 'bps' => 121.0], $forms[0]->data);
         $this->assertSame('e1', $forms[0]->encounterId);
         $this->assertContains('weight converted from kg to lb', $forms[0]->notes);
+        $this->assertSame(['date' => '2021-11-24 16:05:56', 'weight' => 156.53, 'ped_bmi' => 71.5, 'inhaled_oxygen_concentration' => 28.0], $forms[1]->data, 'BMI percentile and inhaled oxygen, in percent');
+    }
+
+    public function testSurveyObservationsBecomeAssessmentsOnTheObservationForm(): void
+    {
+        $survey = static fn(string $id, array $extra, ?string $enc = 'e1', ?string $loinc = '44261-6'): array => array_merge([
+            'resourceType' => 'Observation', 'id' => $id, 'status' => 'final', 'subject' => ['reference' => 'Patient/p1'],
+            'category' => [['coding' => [['code' => 'survey']]]], 'effectiveDateTime' => '2021-11-24T16:05:56-06:00',
+            'code' => ['coding' => $loinc === null ? [] : [['system' => Fhir::LOINC, 'code' => $loinc, 'display' => 'PHQ-9 total score']]],
+        ], $enc === null ? [] : ['encounter' => ['reference' => "Encounter/$enc"]], $extra);
+        $out = $this->mappers()->vitals([
+            $survey('phq9', ['valueQuantity' => ['value' => 16, 'unit' => '{score}', 'code' => '{score}']]),
+            $survey('fall', ['valueCodeableConcept' => ['coding' => [['system' => Fhir::LOINC, 'code' => 'LA13038-7', 'display' => 'Low Risk']]]], 'e1', '59461-4'),
+            $survey('prapare', ['component' => [
+                ['code' => ['coding' => [['system' => Fhir::LOINC, 'code' => '63586-2', 'display' => 'Household income']]], 'valueQuantity' => ['value' => 23000, 'unit' => '/a']],
+                ['code' => ['coding' => [['system' => Fhir::LOINC, 'code' => '93043-8']]], 'valueCodeableConcept' => ['coding' => [['system' => Fhir::LOINC, 'code' => 'LA30122-8', 'display' => 'I choose not to answer']]]],
+                ['code' => ['text' => 'no code'], 'valueString' => 'x'],
+            ]], 'e1', '93025-5'),
+            $survey('noenc', ['valueQuantity' => ['value' => 3]], null),
+            $survey('nocode', ['valueQuantity' => ['value' => 3]], 'e1', null),
+            $survey('novalue', []),
+            $survey('error', ['status' => 'entered-in-error', 'valueQuantity' => ['value' => 3]]),
+        ], FhirExport::fromResources([]));
+        $byId = [];
+        foreach ($out as $m) {
+            $byId[$m->sourceId] = $m;
+        }
+        $phq9 = $byId['phq9'];
+        $this->assertSame([Mapped::ASSESSMENT, null, 'e1'], [$phq9->kind, $phq9->skip, $phq9->encounterId]);
+        $this->assertSame(['ob_type' => 'assessment', 'category' => 'survey', 'date' => '2021-11-24 16:05:56', 'ob_status' => 'final', 'code' => 'LOINC:44261-6',
+            'description' => 'PHQ-9 total score', 'ob_value' => '16', 'ob_unit' => '', 'sub_observations' => []], $phq9->data, 'a score: {score} is no unit');
+        $this->assertSame(['LA13038-7', 'Low Risk'], [$byId['fall']->data['ob_value'], $byId['fall']->data['ob_value_code_description']]);
+        $prapare = $byId['prapare']->data;
+        $this->assertSame('', $prapare['ob_value'], 'the panel itself has no value');
+        $this->assertSame(['LOINC:63586-2', '23000', '/a'], [$prapare['sub_observations'][0]['code'], $prapare['sub_observations'][0]['ob_value'], $prapare['sub_observations'][0]['ob_unit']]);
+        $this->assertSame('LA30122-8', $prapare['sub_observations'][1]['ob_value']);
+        $this->assertCount(2, $prapare['sub_observations'], 'a component with no code is left out');
+        $this->assertSame(['a component with no LOINC code or no value left out'], $byId['prapare']->notes);
+        $this->assertSame(['not tied to an encounter', 'a survey with no LOINC code', 'a survey with no value', 'marked entered in error or cancelled'],
+            [$byId['noenc']->skip, $byId['nocode']->skip, $byId['novalue']->skip, $byId['error']->skip]);
     }
 
     public function testADocumentWithItsContentGoesToDocumentsAndOneByLinkIsSkipped(): void

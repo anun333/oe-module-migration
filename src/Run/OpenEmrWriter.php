@@ -27,6 +27,7 @@ use OpenEMR\Services\AllergyIntoleranceService;
 use OpenEMR\Services\ConditionService;
 use OpenEMR\Services\EncounterService;
 use OpenEMR\Services\ListService;
+use OpenEMR\Services\ObservationService;
 use OpenEMR\Services\PatientService;
 use OpenEMR\Services\VitalsService;
 use OpenEMR\Validators\ProcessingResult;
@@ -100,8 +101,47 @@ final class OpenEmrWriter implements Writer
                 return (int)$saved['id'];
             case Mapped::DOCUMENT:
                 return $this->document($record->data, $pid);
+            case Mapped::ASSESSMENT:
+                return $this->assessment($record->data, $pid, $encounter, $user);
         }
         throw new \RuntimeException("nothing writes a {$record->kind}");
+    }
+
+    /**
+     * On the encounter's Observation form, through OpenEMR's ObservationService, with any components as its
+     * sub-observations. The service doesn't save a coded answer's display, so that is set on the row afterwards.
+     *
+     * @param array<string, mixed> $d
+     */
+    private function assessment(array $d, int $pid, ?int $encounter, string $user): int
+    {
+        if ($encounter === null) {
+            throw new \RuntimeException('its encounter is not in OpenEMR');
+        }
+        if (!method_exists(ObservationService::class, 'saveObservation')) {
+            throw new \RuntimeException('this OpenEMR has no service that writes the Observation form');
+        }
+        $common = ['pid' => $pid, 'encounter' => $encounter, 'user' => $user, 'groupname' => 'Default', 'authorized' => 1];
+        $display = [];
+        $strip = function (array $o) use (&$display): array {
+            $display[] = (string)($o['ob_value_code_description'] ?? '');
+            unset($o['ob_value_code_description']);
+            return $o;
+        };
+        $main = $strip($d);
+        $main['sub_observations'] = array_map(fn(array $s): array => $strip($s) + $common, (array)($d['sub_observations'] ?? []));
+        $saved = (new ObservationService())->saveObservation($main + $common);
+        if (!is_numeric($saved['id'] ?? null)) {
+            throw new \RuntimeException('the Observation form was not saved');
+        }
+        $ids = [(int)$saved['id'], ...array_map(fn(array $s): int => (int)($s['id'] ?? 0), (array)($saved['sub_observations'] ?? []))];
+        $hasColumn = QueryUtils::fetchRecords("SHOW COLUMNS FROM `form_observation` LIKE 'ob_value_code_description'") !== [];
+        foreach ($ids as $i => $id) {
+            if ($hasColumn && $id > 0 && ($display[$i] ?? '') !== '') {
+                QueryUtils::sqlStatementThrowException('UPDATE `form_observation` SET `ob_value_code_description` = ? WHERE `id` = ? AND `pid` = ?', [$display[$i], $id, $pid]);
+            }
+        }
+        return (int)$saved['id'];
     }
 
     /**
