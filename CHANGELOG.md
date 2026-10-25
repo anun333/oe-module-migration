@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.0 (2026-10-25)
 
 **Survey answers where OpenEMR's quality measures read them, and the rest of USCDI v3's vital signs.**
 
