@@ -282,8 +282,9 @@ final class Mappers
                 continue;
             }
             $key = $encounter[1];
-            $groups[$key] ??= ['patient' => $patient, 'date' => '', 'data' => [], 'parts' => [], 'notes' => []];
+            $groups[$key] ??= ['patient' => $patient, 'date' => '', 'data' => [], 'parts' => [], 'values' => [], 'notes' => []];
             $groups[$key]['parts'][] = $id;
+            $groups[$key]['values'][$id] = array_map(static fn(array $v): mixed => $v[0], $values);
             $when = Fhir::dateTime($o['effectiveDateTime'] ?? null) ?? '';
             $groups[$key]['date'] = max($groups[$key]['date'], $when);
             foreach ($values as $field => [$value, $note]) {
@@ -298,7 +299,7 @@ final class Mappers
         }
         foreach ($groups as $encounter => $g) {
             $out[] = new Mapped(Mapped::VITALS, 'Observation', 'vitals-' . $encounter, $g['patient'], $encounter,
-                ['date' => $g['date']] + $g['data'], null, array_values(array_unique($g['notes'])), $g['parts']);
+                ['date' => $g['date']] + $g['data'], null, array_values(array_unique($g['notes'])), $g['parts'], $g['values']);
         }
         return $out;
     }

@@ -34,6 +34,8 @@ final class Mapped
      * @param array<string, mixed> $data   the fields for OpenEMR's service
      * @param list<string>         $notes  what was adjusted on the way (a unit converted, a code left out)
      * @param list<string>         $parts  for vitals: the source Observations folded into the one form
+     * @param array<string, array<string, mixed>> $partValues for vitals: each folded Observation's own fields, by its id,
+     *                                                        so a later export can add only the new ones (0.3.3)
      */
     public function __construct(
         public readonly string $kind,
@@ -45,6 +47,7 @@ final class Mapped
         public readonly ?string $skip = null,
         public readonly array $notes = [],
         public readonly array $parts = [],
+        public readonly array $partValues = [],
     ) {
     }
 

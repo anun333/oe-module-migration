@@ -7,7 +7,10 @@
  * Documents go through OpenEMR's Document class, as its patient portal files its PDFs.
  * Immunizations are written as OpenEMR's Immunizations screen writes them, since 8.4's
  * ImmunizationService::insert is a stub. The patient is checked to exist first: some
- * validators let an unknown patient through.
+ * validators let an unknown patient through. Each record is written in one transaction with
+ * its map entry (QueryUtils::inTransaction, 8.1.0 and later), so a failure part-way through,
+ * such as the medication's second statement, leaves nothing for a rerun to write twice. A
+ * document's file is the exception: it is on disk before its row, and stays if the row fails.
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -21,6 +24,7 @@ declare(strict_types=1);
 namespace OpenHealthcare\Migration\Run;
 
 use OpenEMR\Common\Database\QueryUtils;
+use OpenEMR\Common\Forms\FormVitals;
 use OpenEMR\Common\Uuid\UuidRegistry;
 use OpenEMR\Services\AllergyIntoleranceService;
 use OpenEMR\Services\ConditionService;
@@ -105,6 +109,32 @@ final class OpenEmrWriter implements Writer
                 return $this->assessment($record->data, $pid, $encounter, $user);
         }
         throw new \RuntimeException("nothing writes a {$record->kind}");
+    }
+
+    /**
+     * As OpenEMR's own Vitals screen saves an edit: the form read back through VitalsService, the new values set on
+     * a FormVitals, and saved by VitalsService, so every other value and the form's uuid stay as they were. The uuid
+     * is left as the string getVitalsForForm() returns: saveVitalsArray() turns a string uuid into bytes, and refuses
+     * bytes (checked on 8.4.1, 2026-10-26).
+     *
+     * @param array<string, mixed> $values
+     */
+    public function addToVitals(int $formId, array $values, int $pid, int $encounter): void
+    {
+        $service = new VitalsService();
+        $row = $service->getVitalsForForm($formId);
+        if (!is_array($row) || (int)($row['pid'] ?? 0) !== $pid) {
+            throw new \RuntimeException('its Vitals form is no longer in OpenEMR');
+        }
+        $form = new FormVitals();
+        $form->populate_array(array_merge($row, $values));
+        $form->set_encounter($encounter);
+        $service->saveVitalsForm($form);
+    }
+
+    public function transaction(callable $action): mixed
+    {
+        return QueryUtils::inTransaction($action);
     }
 
     /**

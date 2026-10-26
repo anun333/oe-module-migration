@@ -47,15 +47,43 @@ final class FakeLookups implements Lookups
     }
 }
 
-/** Records what would be written; patients get pids from 100, other records ids from 1000. */
+/**
+ * Records what would be written; patients get pids from 100, other records ids from 1000. A transaction keeps
+ * what was written in it only when it finishes, as the database's would.
+ */
 final class FakeWriter implements Writer
 {
-    /** @var list<array{kind: string, id: string, pid: ?int, encounter: ?int}> */
+    /** @var list<array<string, mixed>> */
     public array $written = [];
 
-    /** @param array<string, int> $existing "fname|lname|dob|sex" => pid already in OpenEMR */
-    public function __construct(private readonly array $existing = [], private readonly ?string $failId = null)
+    public int $rolledBack = 0;
+
+    private int $ids = 0;
+
+    /**
+     * @param array<string, int> $existing    "fname|lname|dob|sex" => pid already in OpenEMR
+     * @param string|null        $failId      a source id OpenEMR refuses outright
+     * @param string|null        $failAfterId a source id whose first statement is written and whose second fails
+     */
+    public function __construct(private readonly array $existing = [], private readonly ?string $failId = null, private readonly ?string $failAfterId = null)
     {
+    }
+
+    public function transaction(callable $action): mixed
+    {
+        $before = $this->written;
+        try {
+            return $action();
+        } catch (\Throwable $e) {
+            $this->written = $before;
+            $this->rolledBack++;
+            throw $e;
+        }
+    }
+
+    public function addToVitals(int $formId, array $values, int $pid, int $encounter): void
+    {
+        $this->written[] = ['kind' => 'vitals-add', 'id' => (string)$formId, 'pid' => $pid, 'encounter' => $encounter, 'values' => $values];
     }
 
     public function findPatient(string $fname, string $lname, string $dob, string $sex): ?int
@@ -69,6 +97,10 @@ final class FakeWriter implements Writer
             throw new \RuntimeException('OpenEMR refused it: lname: too short');
         }
         $this->written[] = ['kind' => $record->kind, 'id' => $record->sourceId, 'pid' => $pid, 'encounter' => $encounter];
-        return $record->kind === Mapped::PATIENT ? 99 + count($this->written) : 999 + count($this->written);
+        if ($record->sourceId === $this->failAfterId) {
+            throw new \RuntimeException('the second statement failed');
+        }
+        $this->ids++;
+        return $record->kind === Mapped::PATIENT ? 99 + $this->ids : 999 + $this->ids;
     }
 }

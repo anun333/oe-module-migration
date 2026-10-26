@@ -31,7 +31,7 @@ php interface/modules/custom_modules/oe-module-migration/bin/migrate.php \
 
 - **A dry run by default.** It writes nothing but its report: for each resource type, how many were read, how many would be imported, how many are skipped and why, and how many failed.
 - **`--import`** writes.
-- **`--system`** names the system the export came from. Each record imported is mapped to its source id under that name, so a rerun, or a later export from the same system, skips what's already in.
+- **`--system`** names the system the export came from. Each record imported is mapped to its source id under that name, so a rerun, or a later export from the same system, skips what's already in. A vital sign a later export adds to an encounter already imported goes onto that encounter's Vitals form; a reading of a vital sign the form already has is left out, with an issue line, and the form keeps its value.
 - **`--user`** is the OpenEMR administrator the records are entered as. It must pass `admin/super`, the same check as the module's page.
 - **`--link-duplicates`** handles possible duplicates: patients already in OpenEMR with the same first name, last name, birth date and sex. Without it they're reported and skipped; with it they're linked to the existing patient, and their records go on that chart.
 
@@ -96,13 +96,13 @@ Tested with synthetic data on OpenEMR 8.4.1 (Docker image `openemr/openemr:8.4.1
 - installs the module through Module Manager;
 - confirms the dry run writes nothing and reads every line of every file;
 - confirms the import brings in what the dry run said (1,723 records with Synthea v4.0.0: 8 patients, 270 encounters, 220 problems, 11 allergies, 80 medications, 112 immunizations, 270 documents, 485 vital signs on 82 Vitals forms, and 267 survey answers on Observation forms) and that OpenEMR's tables hold exactly that;
-- confirms a rerun imports nothing;
+- confirms a rerun imports nothing, and that a later export with one more vital sign for an encounter already imported adds just that reading to the encounter's Vitals form (0.3.3);
 - imports the same people again, from the Bundles under another system name, and confirms every one is reported as a possible duplicate;
 - compares one patient, a problem, an immunization, a converted weight, a PHQ-9 total (an assessment on its encounter's Observation form) and a PRAPARE panel (21 answers as sub-observations) with their source;
 - loads the runs page;
 - removes everything through the map.
 
-It uses OpenEMR features present since 8.1.0. It installs and its pages load on 8.1.0 and 8.3.0 (above); the full end-to-end check runs on 8.4.1 and master. It needs PHP 8.3 or later.
+It uses OpenEMR features present since 8.1.0. It installs and its pages load on 8.1.0 and 8.3.0 (above); the full end-to-end check runs on 8.4.1 and master. It needs PHP 8.2 or later.
 
 ## Development
 
@@ -113,7 +113,7 @@ php tools/footprint.php          # regenerate FOOTPRINT.md after changing the mo
 php tools/footprint.php --check  # what CI runs
 ```
 
-The unit tests need no database or OpenEMR install. CI runs them, and the footprint check, on PHP 8.3, 8.4 and 8.5.
+The unit tests need no database or OpenEMR install. CI runs them, and the footprint check, on PHP 8.2, 8.3, 8.4 and 8.5.
 
 ## Other modules for OpenEMR
 

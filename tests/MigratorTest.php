@@ -83,11 +83,90 @@ final class MigratorTest extends TestCase
         $this->assertSame([Migrator::NO_PATIENT => 1], $result['report']['Encounter']['skipped']);
     }
 
-    private static function export(): FhirExport
+    public function testALaterExportAddsANewReadingToTheVitalsFormAlreadyImported(): void
     {
-        $obs = static fn(string $id, string $loinc, float $v, string $unit, string $category = 'vital-signs'): array => ['resourceType' => 'Observation', 'id' => $id,
+        $map = self::mapAfterFirstRun();
+        $writer = new FakeWriter();
+        $mapped = [];
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, $map, false, false,
+            static function (string $type, string $id, string $target, int $targetId, int $pid) use (&$mapped): void {
+                $mapped["$type/$id"] = [$target, $targetId, $pid];
+            }))->run(self::export([self::obs('p', '8867-4', 72, '/min')]));
+
+        $this->assertSame([['kind' => 'vitals-add', 'id' => '1004', 'pid' => 100, 'encounter' => 1002, 'values' => ['pulse' => 72.0]]], $writer->written,
+            'only the new pulse goes onto the Vitals form already imported; no second form');
+        $this->assertSame(['Observation/p' => ['vitals', 1004, 100]], $mapped, 'the new reading is mapped to that form');
+        $this->assertSame(2, $result['report']['Observation']['already']);
+        $this->assertSame(1, $result['report']['Observation']['imported']);
+    }
+
+    public function testALaterReadingOfAVitalSignTheFormAlreadyHasIsLeftOut(): void
+    {
+        $map = self::mapAfterFirstRun();
+        $writer = new FakeWriter();
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, $map, false))
+            ->run(self::export([self::obs('w2', '29463-7', 72, 'kg')]));
+
+        $this->assertSame([], $writer->written, 'the weight already on the form stays as it is');
+        $this->assertSame(1, $result['report']['Observation']['skipped'][Migrator::ALREADY_ON_FORM] ?? 0);
+        $this->assertContains('w2', array_column($result['issues'], 'id'), 'with an issue line naming it');
+        $this->assertSame(2, $result['report']['Observation']['already']);
+    }
+
+    public function testARecordThatFailsPartWayLeavesNothingAndARerunWritesItOnce(): void
+    {
+        $writer = new FakeWriter([], null, 'c1');
+        $mapped = [];
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, [], false, false,
+            static function (string $type, string $id) use (&$mapped): void {
+                $mapped[] = "$type/$id";
+            }))->run(self::export());
+
+        $this->assertNotContains('c1', array_column($writer->written, 'id'), 'the half-written problem is rolled back');
+        $this->assertNotContains('Condition/c1', $mapped);
+        $this->assertSame(1, $result['report']['Condition']['failed']);
+        $this->assertSame(1, $writer->rolledBack);
+    }
+
+    public function testAMapEntryThatFailsRollsItsRecordBackAndTheRunGoesOn(): void
+    {
+        $writer = new FakeWriter();
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, [], false, false,
+            static function (string $type, string $id): void {
+                if ("$type/$id" === 'Condition/c1') {
+                    throw new \RuntimeException('the map entry was not saved');
+                }
+            }))->run(self::export());
+
+        $this->assertNotContains('c1', array_column($writer->written, 'id'), 'without its map entry the problem would be written again on a rerun');
+        $this->assertSame(1, $result['report']['Condition']['failed']);
+        $this->assertContains('the map entry was not saved', array_column($result['issues'], 'message'));
+        $this->assertSame(2, $result['report']['Observation']['imported'], 'the run went on to the vitals');
+    }
+
+    /** @return array<string, array{target: string, targetId: int, pid: int}> */
+    private static function mapAfterFirstRun(): array
+    {
+        $map = [];
+        (new Migrator(new Mappers(new FakeLookups()), new FakeWriter(), [], false, false,
+            static function (string $type, string $id, string $target, int $targetId, int $pid) use (&$map): void {
+                $map["$type/$id"] = ['target' => $target, 'targetId' => $targetId, 'pid' => $pid];
+            }))->run(self::export());
+        return $map;
+    }
+
+    /** @return array<string, mixed> */
+    private static function obs(string $id, string $loinc, float $v, string $unit, string $category = 'vital-signs'): array
+    {
+        return ['resourceType' => 'Observation', 'id' => $id,
             'status' => 'final', 'subject' => ['reference' => 'Patient/p1'], 'encounter' => ['reference' => 'Encounter/e1'], 'category' => [['coding' => [['code' => $category]]]],
             'code' => ['coding' => [['system' => Fhir::LOINC, 'code' => $loinc]]], 'effectiveDateTime' => '2021-11-24', 'valueQuantity' => ['value' => $v, 'code' => $unit]];
+    }
+
+    /** @param list<array<string, mixed>> $extra */
+    private static function export(array $extra = []): FhirExport
+    {
+        $obs = self::obs(...);
         return FhirExport::fromResources([
             ['resourceType' => 'Patient', 'id' => 'p1', 'name' => [['given' => ['Ana'], 'family' => 'Ruiz']], 'gender' => 'female', 'birthDate' => '1980-01-01'],
             ['resourceType' => 'Patient', 'id' => 'p2', 'name' => [['given' => ['Bo'], 'family' => 'Lee']], 'gender' => 'male', 'birthDate' => '1990-01-01'],
@@ -95,6 +174,7 @@ final class MigratorTest extends TestCase
             ['resourceType' => 'Condition', 'id' => 'c1', 'subject' => ['reference' => 'Patient/p1'], 'code' => ['text' => 'Asthma'], 'onsetDateTime' => '2010-01-01'],
             $obs('w', '29463-7', 70, 'kg'), $obs('h', '8302-2', 175, 'cm'), $obs('a1c', '4548-4', 6.1, '%', 'laboratory'),
             ['resourceType' => 'Procedure', 'id' => 'x1', 'subject' => ['reference' => 'Patient/p1']],
+            ...$extra,
         ]);
     }
 }

@@ -30,4 +30,21 @@ interface Writer
      * @throws \RuntimeException when OpenEMR refuses it; the message says why
      */
     public function write(Mapped $record, ?int $pid, ?int $encounter): int;
+
+    /**
+     * Adds vital signs to a Vitals form already imported, leaving its other values as they are (0.3.3).
+     *
+     * @param array<string, mixed> $values the Vitals form's fields to set
+     * @throws \RuntimeException when the form is gone or OpenEMR refuses it
+     */
+    public function addToVitals(int $formId, array $values, int $pid, int $encounter): void;
+
+    /**
+     * Runs $action as one database transaction: everything it writes stays only if it returns (0.3.3).
+     *
+     * @template T
+     * @param callable(): T $action
+     * @return T
+     */
+    public function transaction(callable $action): mixed;
 }

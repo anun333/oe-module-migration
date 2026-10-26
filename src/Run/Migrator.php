@@ -5,7 +5,9 @@
  * patients first (matched against the map, then against patients already in OpenEMR),
  * then encounters, then the chart records that need only the patient, then vital signs
  * folded into their encounter's Vitals form. Whatever is already in the map for this
- * source system is left alone, so a rerun adds nothing.
+ * source system is left alone, so a rerun adds nothing, and a later export adds only what's
+ * new: a vital sign for an encounter already imported goes onto its Vitals form. Each record
+ * is written with its map entry in one transaction, so a failure part-way leaves neither.
  *
  * @package   OpenEMR
  * @link      https://www.open-emr.org
@@ -30,6 +32,8 @@ final class Migrator
     public const NO_ENCOUNTER = 'its encounter is not imported';
     public const NOT_IN_V1 = 'not imported by this version';
     public const REFERENCED = 'read to fill in the records that point at it, not imported itself';
+    public const ALREADY_ON_FORM = "a later reading of a vital sign the encounter's Vitals form already has: the form's value kept";
+    public const SPLIT_FORM = "its encounter's vital signs are on more than one Vitals form";
 
     /** @var array<string, array{target: string, targetId: int, pid: int}> */
     private array $map;
@@ -118,6 +122,11 @@ final class Migrator
     /** Everything that needs its patient (and, for vitals, its encounter) imported first. */
     private function dependent(Mapped $m): void
     {
+        $done = array_values(array_filter($m->parts, fn(string $p): bool => isset($this->map['Observation/' . $p])));
+        if ($done !== [] && count($done) < count($m->parts)) {
+            $this->addToVitals($m, $done);
+            return;
+        }
         if ($this->isMapped($m)) {
             $this->count($m, 'already');
             return;
@@ -148,15 +157,78 @@ final class Migrator
             $this->count($m, 'imported');
             return;
         }
+        $parts = $m->parts === [] ? null : $m->parts;
         try {
-            $id = $this->writer->write($m, $pid, $encounter);
+            $id = $this->writer->transaction(function () use ($m, $pid, $encounter, $parts): int {
+                $id = $this->writer->write($m, $pid, $encounter);
+                $this->persist($m, $parts, $m->kind, $id, $pid ?? $id, false);
+                return $id;
+            });
         } catch (\RuntimeException $e) {
             $this->count($m, 'failed');
             $this->issues[] = ['type' => $m->sourceType, 'id' => $m->sourceId, 'level' => 'failed', 'message' => $e->getMessage()];
             return;
         }
-        $this->remember($m, $m->kind, $id, $pid ?? $id, false);
+        $this->note($m, $parts, $m->kind, $id, $pid ?? $id);
         $this->count($m, 'imported');
+    }
+
+    /**
+     * Vitals for an encounter already imported, from a later export with more readings: the new readings go onto
+     * the form already there, and a field the form already has keeps its value.
+     *
+     * @param list<string> $done the folded Observations already mapped
+     */
+    private function addToVitals(Mapped $m, array $done): void
+    {
+        $new = array_values(array_diff($m->parts, $done));
+        $this->countN($m->sourceType, 'already', count($done));
+        $forms = array_values(array_unique(array_map(fn(string $p): int => $this->map['Observation/' . $p]['targetId'], $done)));
+        $patient = $m->patientId === null ? null : ($this->map['Patient/' . $m->patientId] ?? null);
+        $encounter = $m->encounterId === null ? null : ($this->map['Encounter/' . $m->encounterId] ?? null);
+        if (count($forms) > 1 || $patient === null || $encounter === null) {
+            $this->skipParts($m, $new, count($forms) > 1 ? self::SPLIT_FORM : ($patient === null ? self::NO_PATIENT : self::NO_ENCOUNTER));
+            return;
+        }
+        $onForm = [];
+        foreach ($done as $p) {
+            $onForm += $m->partValues[$p] ?? [];
+        }
+        $values = [];
+        $adding = [];
+        $kept = [];
+        foreach ($new as $p) {
+            $fresh = array_diff_key($m->partValues[$p] ?? [], $onForm);
+            if ($fresh === []) {
+                $kept[] = $p;
+                continue;
+            }
+            $values = $fresh + $values;
+            $adding[] = $p;
+        }
+        if ($kept !== []) {
+            $this->skipParts($m, $kept, self::ALREADY_ON_FORM);
+        }
+        if ($adding === []) {
+            return;
+        }
+        if ($this->dryRun) {
+            $this->note($m, $adding, $m->kind, $forms[0], $patient['pid']);
+            $this->countN($m->sourceType, 'imported', count($adding));
+            return;
+        }
+        try {
+            $this->writer->transaction(function () use ($m, $adding, $values, $forms, $patient, $encounter): void {
+                $this->writer->addToVitals($forms[0], $values, $patient['pid'], $encounter['targetId']);
+                $this->persist($m, $adding, $m->kind, $forms[0], $patient['pid'], false);
+            });
+        } catch (\RuntimeException $e) {
+            $this->countN($m->sourceType, 'failed', count($adding));
+            $this->issues[] = ['type' => $m->sourceType, 'id' => $m->sourceId, 'level' => 'failed', 'message' => $e->getMessage()];
+            return;
+        }
+        $this->note($m, $adding, $m->kind, $forms[0], $patient['pid']);
+        $this->countN($m->sourceType, 'imported', count($adding));
     }
 
     /** A record folded from several Observations (a Vitals form) is mapped by each of them, not by itself. */
@@ -175,12 +247,48 @@ final class Migrator
 
     private function remember(Mapped $m, string $target, int $targetId, int $pid, bool $linked, bool $persist = true): void
     {
-        $keys = $m->parts === [] ? [[$m->sourceType, $m->sourceId]] : array_map(static fn(string $p): array => ['Observation', $p], $m->parts);
-        foreach ($keys as [$type, $id]) {
+        $parts = $m->parts === [] ? null : $m->parts;
+        if ($persist) {
+            $this->persist($m, $parts, $target, $targetId, $pid, $linked);
+        }
+        $this->note($m, $parts, $target, $targetId, $pid);
+    }
+
+    /**
+     * The record's keys: itself, or the folded Observations given.
+     *
+     * @param list<string>|null $parts
+     * @return list<array{string, string}>
+     */
+    private static function keys(Mapped $m, ?array $parts): array
+    {
+        return $parts === null ? [[$m->sourceType, $m->sourceId]] : array_map(static fn(string $p): array => ['Observation', $p], $parts);
+    }
+
+    /**
+     * Saves the map entries, inside the record's transaction.
+     *
+     * @param list<string>|null $parts
+     */
+    private function persist(Mapped $m, ?array $parts, string $target, int $targetId, int $pid, bool $linked): void
+    {
+        if ($this->dryRun || !is_callable($this->record)) {
+            return;
+        }
+        foreach (self::keys($m, $parts) as [$type, $id]) {
+            ($this->record)($type, $id, $target, $targetId, $pid, $linked);
+        }
+    }
+
+    /**
+     * Keeps the entries for the rest of the run, once they're saved.
+     *
+     * @param list<string>|null $parts
+     */
+    private function note(Mapped $m, ?array $parts, string $target, int $targetId, int $pid): void
+    {
+        foreach (self::keys($m, $parts) as [$type, $id]) {
             $this->map["$type/$id"] = ['target' => $target, 'targetId' => $targetId, 'pid' => $pid];
-            if ($persist && !$this->dryRun && is_callable($this->record)) {
-                ($this->record)($type, $id, $target, $targetId, $pid, $linked);
-            }
         }
     }
 
@@ -191,11 +299,28 @@ final class Migrator
         $this->issues[] = ['type' => $m->sourceType, 'id' => $m->sourceId, 'level' => 'skipped', 'message' => $detail ?? $why];
     }
 
+    /**
+     * Skips some of a record's folded Observations, each with an issue line.
+     *
+     * @param list<string> $parts
+     */
+    private function skipParts(Mapped $m, array $parts, string $why): void
+    {
+        $this->report[$m->sourceType]['skipped'][$why] = ($this->report[$m->sourceType]['skipped'][$why] ?? 0) + count($parts);
+        foreach ($parts as $p) {
+            $this->issues[] = ['type' => $m->sourceType, 'id' => $p, 'level' => 'skipped', 'message' => $why];
+        }
+    }
+
     /** Counts the record, and for folded vitals each Observation in it. */
     private function count(Mapped $m, string $what): void
     {
-        $n = max(1, count($m->parts));
-        $this->report[$m->sourceType] ??= ['read' => 0, 'imported' => 0, 'already' => 0, 'skipped' => [], 'failed' => 0];
-        $this->report[$m->sourceType][$what] += $n;
+        $this->countN($m->sourceType, $what, max(1, count($m->parts)));
+    }
+
+    private function countN(string $type, string $what, int $n): void
+    {
+        $this->report[$type] ??= ['read' => 0, 'imported' => 0, 'already' => 0, 'skipped' => [], 'failed' => 0];
+        $this->report[$type][$what] += $n;
     }
 }
