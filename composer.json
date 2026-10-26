@@ -19,7 +19,7 @@
     ],
     "require": {
         "php": ">=8.3",
-        "anun333/openhealthcare-common": "^1.3.2",
+        "anun333/openhealthcare-common": "^1.3.3",
         "openemr/oe-module-installer-plugin": "^0.1.5"
     },
     "require-dev": {
