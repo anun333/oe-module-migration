@@ -115,13 +115,15 @@ final class OpenEmrWriter implements Writer
      * As OpenEMR's own Vitals screen saves an edit: the form read back through VitalsService, the new values set on
      * a FormVitals, and saved by VitalsService, so every other value and the form's uuid stay as they were. The uuid
      * is left as the string getVitalsForForm() returns: saveVitalsArray() turns a string uuid into bytes, and refuses
-     * bytes (checked on 8.4.1, 2026-10-26).
+     * bytes (checked on 8.4.1, 2026-10-26). The form is read in the units it's stored in: VitalsService converts to
+     * kg, cm and °C on read where the site shows metric, and saving those numbers back would put them in columns
+     * that hold lb, in and °F (0.3.3 did, 0.3.4 doesn't).
      *
      * @param array<string, mixed> $values
      */
     public function addToVitals(int $formId, array $values, int $pid, int $encounter): void
     {
-        $service = new VitalsService();
+        $service = self::storedUnits();
         $row = $service->getVitalsForForm($formId);
         if (!is_array($row) || (int)($row['pid'] ?? 0) !== $pid) {
             throw new \RuntimeException('its Vitals form is no longer in OpenEMR');
@@ -130,6 +132,20 @@ final class OpenEmrWriter implements Writer
         $form->populate_array(array_merge($row, $values));
         $form->set_encounter($encounter);
         $service->saveVitalsForm($form);
+    }
+
+    public function vitalsOnForm(int $formId): ?array
+    {
+        $row = self::storedUnits()->getVitalsForForm($formId);
+        return is_array($row) ? $row : null;
+    }
+
+    /** VitalsService reading values as stored (lb, in, °F), without the site's display conversion. */
+    private static function storedUnits(): VitalsService
+    {
+        $service = new VitalsService();
+        $service->setShouldConvertVitalMeasurementsFlag(false);
+        return $service;
     }
 
     public function transaction(callable $action): mixed

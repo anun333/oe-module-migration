@@ -190,9 +190,16 @@ final class Migrator
             $this->skipParts($m, $new, count($forms) > 1 ? self::SPLIT_FORM : ($patient === null ? self::NO_PATIENT : self::NO_ENCOUNTER));
             return;
         }
+        // What the form has: the values this export already put there, and every field the stored form holds now,
+        // which covers a value someone entered after the import and a reading this export no longer carries.
         $onForm = [];
         foreach ($done as $p) {
             $onForm += $m->partValues[$p] ?? [];
+        }
+        foreach ($this->writer->vitalsOnForm($forms[0]) ?? [] as $field => $value) {
+            if (is_string($field) && !self::isBlank($value)) {
+                $onForm[$field] = $value;
+            }
         }
         $values = [];
         $adding = [];
@@ -229,6 +236,12 @@ final class Migrator
         }
         $this->note($m, $adding, $m->kind, $forms[0], $patient['pid']);
         $this->countN($m->sourceType, 'imported', count($adding));
+    }
+
+    /** A Vitals column with nothing in it: NULL, an empty string, or the 0 an unset numeric column holds. */
+    private static function isBlank(mixed $value): bool
+    {
+        return $value === null || $value === '' || (is_numeric($value) && (float)$value == 0.0);
     }
 
     /** A record folded from several Observations (a Vitals form) is mapped by each of them, not by itself. */

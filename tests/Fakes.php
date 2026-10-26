@@ -64,9 +64,19 @@ final class FakeWriter implements Writer
      * @param array<string, int> $existing    "fname|lname|dob|sex" => pid already in OpenEMR
      * @param string|null        $failId      a source id OpenEMR refuses outright
      * @param string|null        $failAfterId a source id whose first statement is written and whose second fails
+     * @param array<int, array<string, mixed>> $forms Vitals forms as stored, by form id
      */
-    public function __construct(private readonly array $existing = [], private readonly ?string $failId = null, private readonly ?string $failAfterId = null)
+    public function __construct(
+        private readonly array $existing = [],
+        private readonly ?string $failId = null,
+        private readonly ?string $failAfterId = null,
+        private readonly array $forms = [],
+    ) {
+    }
+
+    public function vitalsOnForm(int $formId): ?array
     {
+        return $this->forms[$formId] ?? [];
     }
 
     public function transaction(callable $action): mixed

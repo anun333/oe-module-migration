@@ -40,6 +40,14 @@ interface Writer
     public function addToVitals(int $formId, array $values, int $pid, int $encounter): void;
 
     /**
+     * A Vitals form's values as stored, in the units OpenEMR keeps them in (lb, in, °F) whatever the site shows, or
+     * null when the form is gone (0.3.4).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function vitalsOnForm(int $formId): ?array;
+
+    /**
      * Runs $action as one database transaction: everything it writes stays only if it returns (0.3.3).
      *
      * @template T

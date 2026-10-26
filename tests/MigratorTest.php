@@ -113,6 +113,42 @@ final class MigratorTest extends TestCase
         $this->assertSame(2, $result['report']['Observation']['already']);
     }
 
+    public function testAValueEnteredOnTheFormAfterTheImportIsKept(): void
+    {
+        $map = self::mapAfterFirstRun();
+        $writer = new FakeWriter([], null, null, [1004 => ['weight' => '154.32', 'height' => '68.90', 'pulse' => '80.00']]);
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, $map, false))
+            ->run(self::export([self::obs('p', '8867-4', 72, '/min')]));
+
+        $this->assertSame([], $writer->written, 'the pulse someone entered on the form after the import stays');
+        $this->assertSame(1, $result['report']['Observation']['skipped'][Migrator::ALREADY_ON_FORM] ?? 0);
+        $this->assertContains('p', array_column($result['issues'], 'id'));
+    }
+
+    public function testAReadingTheLaterExportNoLongerCarriesIsKept(): void
+    {
+        $map = self::mapAfterFirstRun();
+        $writer = new FakeWriter([], null, null, [1004 => ['weight' => '154.32', 'height' => '68.90']]);
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, $map, false))
+            ->run(self::export([self::obs('w2', '29463-7', 72, 'kg')], ['w']));
+
+        $this->assertSame([], $writer->written, 'the first export\'s weight is on the form, though this export no longer carries it');
+        $this->assertSame(1, $result['report']['Observation']['skipped'][Migrator::ALREADY_ON_FORM] ?? 0);
+        $this->assertSame(1, $result['report']['Observation']['already'], 'only the height is in this export and mapped');
+    }
+
+    public function testABlankFieldOnTheStoredFormIsFilled(): void
+    {
+        $map = self::mapAfterFirstRun();
+        $writer = new FakeWriter([], null, null, [1004 => ['weight' => '154.32', 'height' => '68.90', 'pulse' => '0.00', 'respiration' => null]]);
+        $result = (new Migrator(new Mappers(new FakeLookups()), $writer, $map, false))
+            ->run(self::export([self::obs('p', '8867-4', 72, '/min')]));
+
+        $this->assertSame([['kind' => 'vitals-add', 'id' => '1004', 'pid' => 100, 'encounter' => 1002, 'values' => ['pulse' => 72.0]]], $writer->written,
+            'a 0 or NULL in a column is nothing there yet');
+        $this->assertSame(1, $result['report']['Observation']['imported']);
+    }
+
     public function testARecordThatFailsPartWayLeavesNothingAndARerunWritesItOnce(): void
     {
         $writer = new FakeWriter([], null, 'c1');
@@ -163,11 +199,14 @@ final class MigratorTest extends TestCase
             'code' => ['coding' => [['system' => Fhir::LOINC, 'code' => $loinc]]], 'effectiveDateTime' => '2021-11-24', 'valueQuantity' => ['value' => $v, 'code' => $unit]];
     }
 
-    /** @param list<array<string, mixed>> $extra */
-    private static function export(array $extra = []): FhirExport
+    /**
+     * @param list<array<string, mixed>> $extra
+     * @param list<string>               $without ids of the default resources to leave out
+     */
+    private static function export(array $extra = [], array $without = []): FhirExport
     {
         $obs = self::obs(...);
-        return FhirExport::fromResources([
+        return FhirExport::fromResources(array_values(array_filter([
             ['resourceType' => 'Patient', 'id' => 'p1', 'name' => [['given' => ['Ana'], 'family' => 'Ruiz']], 'gender' => 'female', 'birthDate' => '1980-01-01'],
             ['resourceType' => 'Patient', 'id' => 'p2', 'name' => [['given' => ['Bo'], 'family' => 'Lee']], 'gender' => 'male', 'birthDate' => '1990-01-01'],
             ['resourceType' => 'Encounter', 'id' => 'e1', 'subject' => ['reference' => 'Patient/p1'], 'class' => ['code' => 'AMB'], 'period' => ['start' => '2021-11-24T09:00:00']],
@@ -175,6 +214,6 @@ final class MigratorTest extends TestCase
             $obs('w', '29463-7', 70, 'kg'), $obs('h', '8302-2', 175, 'cm'), $obs('a1c', '4548-4', 6.1, '%', 'laboratory'),
             ['resourceType' => 'Procedure', 'id' => 'x1', 'subject' => ['reference' => 'Patient/p1']],
             ...$extra,
-        ]);
+        ], static fn(array $r): bool => !in_array($r['id'], $without, true))));
     }
 }
