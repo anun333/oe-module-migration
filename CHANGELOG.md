@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.5 (unreleased)
+
+- **Pages are announced in your language.** Each page now declares the signed-in user's OpenEMR language and its direction instead of English, so a screen reader reads the translated text in that language. It comes from openhealthcare-common 1.4.0, which this version requires.
+- **Manual installs:** the README now says that every module's own copy of openhealthcare-common must be the same version, since OpenEMR loads the library once, from the first module that registers it.
+- **LOINC's notice:** the README now carries the notice LOINC's licence asks for, since the module reads LOINC codes to place vital signs and survey Observations.
+
 ## 0.3.4 (2026-10-26)
 
 - **Fixed: on a site that shows metric vital signs, 0.3.3 rewrote an imported Vitals form's stored values when a later export added a reading to it.** OpenEMR stores weight in lb, height and the circumferences in inches and temperature in °F, and on a site whose Units for Visit Forms are metric (Administration › Config › Locale: "Show both US and metric (main unit is metric)" or "Show metric only", values 2 and 4) its VitalsService reads those back converted to kg, cm and °C. 0.3.3 saved what it read, so the form's weight, height, temperature, head and waist circumference were stored again as the metric numbers in lb, in and °F columns: a weight of 164.91 lb became 74.80, and 33.93 after a second added reading. Now the form is read and saved in the units it's stored in, as the first import writes it, and nothing else on the form changes. Sites showing US units (1 or 3) weren't affected.

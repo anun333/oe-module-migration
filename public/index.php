@@ -19,6 +19,7 @@ require_once __DIR__ . '/../../../../globals.php';
 use OpenEMR\Common\Acl\AccessDeniedHelper;
 use OpenEMR\Common\Acl\AclMain;
 use OpenEMR\Core\Header;
+use OpenHealthcare\Common\OpenEmr;
 use OpenHealthcare\Migration\Run\Report;
 use OpenHealthcare\Migration\Store\MapStore;
 
@@ -52,8 +53,8 @@ if ($run !== null && ($_GET['format'] ?? '') === 'csv') {
 }
 ?>
 <!DOCTYPE html>
-<?php // The module's own text is written in English. ?>
-<html lang="en">
+<?php // The page is in the signed-in user's OpenEMR language, so translated text is announced in it. ?>
+<html lang="<?php echo attr(OpenEmr::pageLang()); ?>" dir="<?php echo attr(OpenEmr::pageDir()); ?>">
 <head>
     <title><?php echo xlt('Migration'); ?></title>
     <?php Header::setupHeader(); ?>
