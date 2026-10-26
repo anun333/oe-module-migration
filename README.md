@@ -8,7 +8,7 @@ Moves a practice's records into OpenEMR from another EHR. It reads the FHIR R4 e
 
 Running it twice adds nothing twice.
 
-> **Status: 0.3.2, a pre-release. This module needs OpenEMR 8.1.0 or later; on an older release it stays switched off.** Tested on OpenEMR 8.4.1 and master with Synthea's synthetic patients only. Try it on a copy of your database first, and check the report and a sample of charts before importing for real.
+> **Status: 0.3.3, a pre-release. This module needs OpenEMR 8.1.0 or later; on an older release it stays switched off.** Tested on OpenEMR 8.4.1 and master with Synthea's synthetic patients only. Try it on a copy of your database first, and check the report and a sample of charts before importing for real.
 
 What installing it changes in your database, what it reads and writes, and what it hooks into are listed in [FOOTPRINT.md](FOOTPRINT.md), generated from the source.
 

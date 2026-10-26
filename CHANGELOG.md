@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.3 (unreleased)
+## 0.3.3 (2026-10-26)
 
 - **Fixed: a later export from the same system wrote an encounter's vital signs a second time.** Vital signs fold into one Vitals form per encounter, and the form counted as imported only when every reading in it was. So an export that added one reading to an encounter already imported wrote a second Vitals form with all of them, and the map's unique key then stopped the run part-way, leaving that form unmapped. Now the new reading goes onto the Vitals form already there, the way OpenEMR's own Vitals screen saves an edit: the form's other values and its uuid stay as they were, and the encounter keeps one Vitals form. A later reading of a vital sign the form already has (a second weight, say) is left out with an issue line, and the form keeps its value.
 - **Fixed: a record that failed part-way could be written twice.** Each record is now written in one transaction with its map entry (`QueryUtils::inTransaction`, OpenEMR 8.1.0 and later), so a failure part-way through, such as a medication's second statement or its map entry, leaves nothing behind, the record is reported as failed, and the run goes on. A document's file is the exception: it's on disk before its row, and stays if the row fails.
