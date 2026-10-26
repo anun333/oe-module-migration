@@ -57,6 +57,7 @@ if ($run !== null && ($_GET['format'] ?? '') === 'csv') {
 <head>
     <title><?php echo xlt('Migration'); ?></title>
     <?php Header::setupHeader(); ?>
+    <?php echo \OpenHealthcare\Migration\Contrast::style(); ?>
 </head>
 <body class="body_top">
 <div class="container-fluid py-3">

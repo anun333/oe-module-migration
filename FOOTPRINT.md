@@ -67,7 +67,7 @@ As written in the source; whether they behave correctly for a given user is not 
 
 ## Settings it reads
 
-- None.
+- `css_header` (`src/Contrast.php`)
 
 ## Files it writes
 
@@ -85,10 +85,10 @@ As written in the source; whether they behave correctly for a given user is not 
 
 | part | files | lines |
 |---|---|---|
-| PHP logic (`src/`) | 12 | 1902 |
-| tests (`tests/`, `phpunit.xml.dist`) | 7 | 537 |
+| PHP logic (`src/`) | 13 | 1952 |
+| tests (`tests/`, `phpunit.xml.dist`) | 8 | 584 |
 | module wiring | 5 | 173 |
-| pages (`public/`) | 1 | 108 |
+| pages (`public/`) | 1 | 109 |
 | other | 1 | 91 |
 | install SQL (`sql/`) | 1 | 52 |
 | tools (`tools/`) | 1 | 31 |
