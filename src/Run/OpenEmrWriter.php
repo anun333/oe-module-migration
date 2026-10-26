@@ -22,7 +22,6 @@ namespace OpenHealthcare\Migration\Run;
 
 use OpenEMR\Common\Database\QueryUtils;
 use OpenEMR\Common\Uuid\UuidRegistry;
-use OpenEMR\Core\OEGlobalsBag;
 use OpenEMR\Services\AllergyIntoleranceService;
 use OpenEMR\Services\ConditionService;
 use OpenEMR\Services\EncounterService;
@@ -32,6 +31,7 @@ use OpenEMR\Services\PatientService;
 use OpenEMR\Services\VitalsService;
 use OpenEMR\Validators\ProcessingResult;
 use OpenHealthcare\Migration\Map\Mapped;
+use OpenHealthcare\Common\OpenEmr;
 
 final class OpenEmrWriter implements Writer
 {
@@ -40,7 +40,7 @@ final class OpenEmrWriter implements Writer
 
     public function __construct(private readonly int $userId, private readonly int $facility)
     {
-        require_once OEGlobalsBag::getInstance()->getSrcDir() . '/forms.inc.php';
+        require_once OpenEmr::srcDir() . '/forms.inc.php';
     }
 
     public function findPatient(string $fname, string $lname, string $dob, string $sex): ?int
