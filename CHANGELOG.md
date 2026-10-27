@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.6 (unreleased)
+## 0.3.6 (2026-10-26)
 
 - **Picking a run no longer reloads the page.** The **Run** picker reloaded the page as soon as it changed, so moving through it with the keyboard or a screen reader jumped to the first run passed (WCAG 3.2.2). A **Show** button now shows the run picked, as UDS 0.17.5's period picker does.
 - **A staff guide**, GUIDE.md (export, dry run, import, run again), opened by **Help** on the page at the installed version's tag, with a test that every label it quotes is on the page.
