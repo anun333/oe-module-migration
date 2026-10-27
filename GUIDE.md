@@ -16,7 +16,7 @@ Ask the old vendor for a FHIR export: the bulk export certified EHRs have offere
 
 1. Run it without `--import`. A dry run writes nothing but its report.
 2. Name the old system with `--system` ("Old EHR", say), and keep using that name for every later run from it.
-3. Open Admin › **Migration**. The newest run is shown; pick another in **Run**.
+3. Open Admin › **Migration**. The newest run is shown; to see another, pick it in **Run** and choose **Show**.
 4. Read the table, one row per **Resource**: how many were **Read**, how many it **Would import**, how many are **Already imported**, how many it **Skipped** and how many **Failed**, with **Why skipped**.
 5. Choose **Download what was skipped or failed** to go through them line by line.
 
@@ -40,3 +40,7 @@ Run with the same `--system` name. Records already imported from that system are
 ## Who can use it
 
 The page and the command line need an administrator (`admin/super` in OpenEMR's access control): the command's `--user` must be one. Each record is entered as that user.
+
+## Help
+
+**Help** on the module's page opens this guide for the version you have installed.

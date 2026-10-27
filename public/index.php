@@ -63,6 +63,7 @@ if ($run !== null && ($_GET['format'] ?? '') === 'csv') {
 <body class="body_top">
 <div class="container-fluid py-3">
     <h1 class="h4"><?php echo xlt('Migration from another EHR'); ?></h1>
+    <p class="small"><a href="<?php echo attr(\OpenHealthcare\Migration\Guide::url()); ?>" target="_blank" rel="noopener"><?php echo xlt('Help'); ?></a></p>
     <p class="small text-muted"><?php echo xlt('Reads a FHIR R4 export (the bulk NDJSON files certified EHRs offer, or Bundle files) and imports patients, problems, allergies, medications, immunizations, encounters and vital signs through OpenEMR. Runs are started on the server, as the web user; a dry run writes nothing. Records already imported from the same system are never imported twice.'); ?></p>
     <pre class="small bg-light p-2">php interface/modules/custom_modules/oe-module-migration/bin/migrate.php --source=/path/to/export --system="Old EHR" --user=admin [--import]</pre>
 
@@ -71,12 +72,14 @@ if ($run !== null && ($_GET['format'] ?? '') === 'csv') {
     <?php } else { ?>
         <form method="get" class="form-inline mb-3">
             <label class="mr-2" for="run"><?php echo xlt('Run'); ?></label>
-            <select class="form-control form-control-sm mr-2" id="run" name="run" onchange="this.form.submit()">
+            <select class="form-control form-control-sm mr-2" id="run" name="run">
                 <?php foreach ($runs as $r) { ?>
                     <option value="<?php echo attr((string)$r['id']); ?>" <?php echo $r['id'] === $selected ? 'selected' : ''; ?>>
                         <?php echo text('#' . $r['id'] . ' ' . ($r['mode'] === 'import' ? xl('Import') : xl('Dry run')) . ', ' . $r['system'] . ', ' . $r['started']); ?></option>
                 <?php } ?>
             </select>
+            <?php // A button, not a change of the picker, shows the run: nothing reloads while someone moves through it (WCAG 3.2.2). ?>
+            <button type="submit" class="btn btn-sm btn-primary mr-2"><?php echo xlt('Show'); ?></button>
             <a class="btn btn-sm btn-outline-secondary" href="?run=<?php echo attr_url((string)$selected); ?>&format=csv"><?php echo xlt('Download what was skipped or failed'); ?></a>
         </form>
         <?php if ($run !== null) { ?>

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.6 (unreleased)
+
+- **Picking a run no longer reloads the page.** The **Run** picker reloaded the page as soon as it changed, so moving through it with the keyboard or a screen reader jumped to the first run passed (WCAG 3.2.2). A **Show** button now shows the run picked, as UDS 0.17.5's period picker does.
+- **A staff guide**, GUIDE.md (export, dry run, import, run again), opened by **Help** on the page at the installed version's tag, with a test that every label it quotes is on the page.
+- **Install note:** restart the container after adding, upgrading or removing a module copied in by hand (OpenEMR's official 8.0.0 to 8.5.0 images keep class locations, and classes not found, in APCu).
+
 ## 0.3.5 (2026-10-26)
 
 - **Pages are announced in your language.** Each page now declares the signed-in user's OpenEMR language and its direction instead of English, so a screen reader reads the translated text in that language. It comes from openhealthcare-common 1.4.0, which this version requires. If another module's older copy of the library loads first on a site that installs by hand, the pages say English, as before, rather than stop.
