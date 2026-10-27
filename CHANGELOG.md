@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7 (unreleased)
+
+- **On OpenEMR older than 8.1.0, the module's pages say so instead of showing a blank page.** The module needs 8.1.0 or later and stays switched off below it, but a page opened from a bookmark or a typed address still ran and stopped with an empty HTTP 500. Each page now answers with a short page naming the version the module needs and the site's version (found installing every module on a fresh 7.0.2).
+
 ## 0.3.6 (2026-10-26)
 
 - **Picking a run no longer reloads the page.** The **Run** picker reloaded the page as soon as it changed, so moving through it with the keyboard or a screen reader jumped to the first run passed (WCAG 3.2.2). A **Show** button now shows the run picked, as UDS 0.17.5's period picker does.
